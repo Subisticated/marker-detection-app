@@ -5,9 +5,6 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
-  ScrollView,
-  Modal,
 } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 
@@ -15,16 +12,12 @@ const ROI_RATIO = 0.58;
 const MAX_CAPTURE_SIDE = 3000;
 const detectMarker = require('../utils/detectMarker').default;
 
-export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanLog }) {
+export default function CameraScreen({ onMarkerDetected, onStatusChange }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef(null);
 
   const [isScanning, setIsScanning] = useState(false);
   const [feedback, setFeedback] = useState('idle');
-
-  // 🔥 NEW: debug frames
-  const [debugFrames, setDebugFrames] = useState([]);
-  const [previewFrameIndex, setPreviewFrameIndex] = useState(-1);
 
   const statusMap = {
     idle: 'Ready',
@@ -36,28 +29,6 @@ export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanL
   const updateFeedback = (next) => {
     setFeedback(next);
     onStatusChange?.(statusMap[next] || next);
-  };
-
-  const pushLog = (msg) => {
-    onScanLog?.(msg);
-  };
-
-  const closePreview = () => {
-    setPreviewFrameIndex(-1);
-  };
-
-  const openPreview = (index) => {
-    if (index >= 0 && index < debugFrames.length) {
-      setPreviewFrameIndex(index);
-    }
-  };
-
-  const showPrevPreview = () => {
-    setPreviewFrameIndex((prev) => Math.max(0, prev - 1));
-  };
-
-  const showNextPreview = () => {
-    setPreviewFrameIndex((prev) => Math.min(debugFrames.length - 1, prev + 1));
   };
 
   useEffect(() => {
@@ -88,9 +59,6 @@ export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanL
 
     setIsScanning(true);
     updateFeedback('scanning');
-    pushLog('Scan started');
-    closePreview();
-    setDebugFrames([]);
 
     try {
       // 1. Capture
@@ -134,30 +102,11 @@ export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanL
         {}
       );
 
-      // 🔥 SHOW ROI
-      setDebugFrames([
-        {
-          uri: roiImage.uri,
-          label: 'ROI',
-        },
-      ]);
-
       // 4. Detection
       const result = await detectMarker(roiImage.uri);
-      const loggedRotation =
-        typeof result?.rotationDegrees === 'number'
-          ? result.rotationDegrees
-          : ((result?.rotation || 0) % 4) * 90;
-      pushLog(`Detection result: valid=${result?.isValid ? 'yes' : 'no'} rotation=${loggedRotation}`);
-
-      // 🔥 ADD DEBUG FRAMES
-      if (result.frames) {
-        setDebugFrames(prev => [...prev, ...result.frames]);
-      }
 
       if (!result.isValid) {
         updateFeedback('invalid');
-        pushLog('Marker rejected');
         return;
       }
 
@@ -182,12 +131,10 @@ export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanL
 
       onMarkerDetected?.(final.uri);
       updateFeedback('valid');
-      pushLog('Marker accepted and saved (300x300)');
 
     } catch (e) {
       console.log("Scan error:", e);
       updateFeedback('invalid');
-      pushLog(`Scan error: ${e?.message || 'unknown error'}`);
     } finally {
       setIsScanning(false);
     }
@@ -202,9 +149,6 @@ export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanL
       : feedback === 'scanning'
       ? '#f59e0b'
       : '#ffffff';
-
-  const previewVisible = previewFrameIndex >= 0 && previewFrameIndex < debugFrames.length;
-  const previewFrame = previewVisible ? debugFrames[previewFrameIndex] : null;
 
   return (
     <View style={{ flex: 1 }}>
@@ -256,107 +200,6 @@ export default function CameraScreen({ onMarkerDetected, onStatusChange, onScanL
           )}
         </TouchableOpacity>
       </View>
-
-      {/* 🔥 DEBUG VISUAL PANEL */}
-      <View
-        style={{
-          position: 'absolute',
-          bottom: 100,
-          width: '100%',
-        }}
-      >
-        <ScrollView horizontal>
-          {debugFrames.map((f, i) => (
-            <TouchableOpacity key={i} style={{ margin: 5 }} onPress={() => openPreview(i)}>
-              <Image
-                source={{ uri: f.uri }}
-                style={{ width: 100, height: 100 }}
-              />
-              <Text style={{ color: 'white', fontSize: 10 }}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      <Modal
-        visible={previewVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={closePreview}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0, 0, 0, 0.94)',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingHorizontal: 14,
-            paddingVertical: 24,
-          }}
-        >
-          <TouchableOpacity
-            onPress={closePreview}
-            style={{
-              position: 'absolute',
-              top: 40,
-              right: 20,
-              backgroundColor: 'rgba(255,255,255,0.18)',
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              borderRadius: 18,
-            }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
-          </TouchableOpacity>
-
-          {previewFrame ? (
-            <>
-              <Image
-                source={{ uri: previewFrame.uri }}
-                resizeMode="contain"
-                style={{ width: '94%', height: '72%' }}
-              />
-              <Text style={{ color: '#fff', marginTop: 10, fontSize: 16, fontWeight: '700' }}>
-                {previewFrame.label}
-              </Text>
-              <Text style={{ color: '#cbd5e1', marginTop: 4 }}>
-                {previewFrameIndex + 1}/{debugFrames.length}
-              </Text>
-
-              <View style={{ flexDirection: 'row', marginTop: 14 }}>
-                <TouchableOpacity
-                  onPress={showPrevPreview}
-                  disabled={previewFrameIndex <= 0}
-                  style={{
-                    backgroundColor: previewFrameIndex <= 0 ? 'rgba(255,255,255,0.12)' : '#0f172a',
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 10,
-                    marginRight: 10,
-                  }}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '700' }}>Prev</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={showNextPreview}
-                  disabled={previewFrameIndex >= debugFrames.length - 1}
-                  style={{
-                    backgroundColor: previewFrameIndex >= debugFrames.length - 1 ? 'rgba(255,255,255,0.12)' : '#0f172a',
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 10,
-                  }}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '700' }}>Next</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : null}
-        </View>
-      </Modal>
     </View>
   );
 }
